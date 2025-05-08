@@ -1,6 +1,7 @@
 #include <linux/limits.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
@@ -12,8 +13,9 @@
 #include <pwd.h>
 #include <fcntl.h>
 #include "cjson/cJSON.h"
+#include "help.h"
 
-#define STATE_FILE ".launcher_state.json"
+#define STATE_FILE "/tmp/.vpner_state.json"
 
 typedef struct {
 	char *name;
@@ -108,6 +110,10 @@ int handle_input(int count, int *selected) {
 }
 
 int show_menu(Config *configs, int count) {
+	if(!isatty(STDIN_FILENO)) {
+		fprintf(stderr, "Run me in terminal\n");
+		return 1;
+	}
 	enable_raw_mode();
 	printf("\033[?25l"); // Hide cursor
 	int selected = 0;
@@ -165,6 +171,10 @@ Config* load_configs(int *count) {
 	long len = ftell(f);
 	fseek(f, 0, SEEK_SET);
 	char *data = malloc(len + 1);
+	if(!data) {
+		fclose(f);
+		return NULL;
+	}
 	size_t ret = fread(data, 1, len, f);
 	fclose(f);
 	if(ret != (size_t)len) {
@@ -212,6 +222,10 @@ State read_state() {
 	long len = ftell(f);
 	fseek(f, 0, SEEK_SET);
 	char *data = malloc(len + 1);
+	if(!data) {
+		fclose(f);
+		return state;
+	}
 	size_t ret = fread(data, 1, len, f);
 	fclose(f);
 	if(ret != (size_t)len) {
@@ -291,11 +305,73 @@ void start_singbox(const char *config_path) {
 	}
 }
 
-int main() {
-	if(!isatty(STDIN_FILENO)) {
-		fprintf(stderr, "Run me in terminal");
-		return 1;
-	}
+// Add before main logic
+int parse_args(int argc, char *argv[]) {
+    for (int i = 1; i < argc; i++) {
+		if(argv[i][0] != '-') break;
+
+		size_t stlen = strlen(argv[i]);
+		bool fullnum = true;
+		for(size_t y = 1; y < stlen; y++) {
+			if(!(argv[i][y] >= '0' && argv[i][y] <= '9')) {
+				fullnum = false;
+				break;
+			}
+		}
+		if(fullnum) {
+			return atoi(argv[i] + 1);
+		}
+		else if (strcmp(argv[i], "--help") == 0) {
+            printf(HELP_TEXT); // Use the help text above
+            exit(0);
+        }
+        else if (strcmp(argv[i], "--stop") == 0) {
+            kill_previous_process();
+            exit(0);
+        }
+        else if (strcmp(argv[i], "--status") == 0) {
+            State state = read_state();
+            if (state.pid && kill(state.pid, 0) == 0) {
+                printf("VPN running (PID: %d, Config: %s)\n", state.pid, state.config);
+            } else {
+                printf("No VPN running\n");
+            }
+            exit(0);
+        }
+        else if (strcmp(argv[i], "--list") == 0) {
+            int count;
+            Config *configs = load_configs(&count);
+            for (int i = 0; i < count; i++) {
+                printf("%s (%s)\n", configs[i].name, configs[i].path);
+            }
+            exit(0);
+        }
+        else if (strcmp(argv[i], "--list-rofi") == 0) {
+            int count;
+            Config *configs = load_configs(&count);
+            State state = read_state();
+            if (state.pid && kill(state.pid, 0) == 0) {
+				for (int i = 0; i < count; i++) {
+					if(strcmp(configs[i].path, state.config) == 0)
+						printf("✔️ %s\n", configs[i].name);
+					else
+						printf("%i) %s\n", i + 1, configs[i].name);
+				}
+            } else {
+				for (int i = 0; i < count; i++) {
+					printf("%i) %s\n", i + 1, configs[i].name);
+				}
+            }
+            exit(0);
+        }
+    }
+    return -1;
+}
+
+int main(int argc, char *argv[]) {
+	int selected = parse_args(argc, argv);
+	int rc = 0;
+
 	// Load configurations
 	int config_count;
 	Config *configs = load_configs(&config_count);
@@ -304,12 +380,22 @@ int main() {
 		return 1;
 	}
 
-	// Show TUI
-	int selected = show_menu(configs, config_count);
-	if (selected < 0) {
-		printf("❌ Selection cancelled\n");
+	if(selected != -1 && (selected < 1 || selected > config_count)) {
+		fprintf(stderr, "❌  Incorrect selection\n");
+		rc = 1;
 		goto cleanup;
-		return 1;
+	}
+
+	if(selected == -1) {
+		// Show TUI
+		selected = show_menu(configs, config_count);
+		if (selected < 0) {
+			printf("❌ Selection cancelled\n");
+			rc = 1;
+			goto cleanup;
+		}
+	} else {
+		selected--;
 	}
 
 	// Check if config changed
@@ -318,6 +404,7 @@ int main() {
 		if(kill(state.pid, 0) == 0) { // check process exists
 			printf("🔁 Configuration unchanged\n");
 			free(state.config);
+			rc = 1;
 			goto cleanup;
 		}
 	}
@@ -325,6 +412,7 @@ int main() {
 
 	if (access(configs[selected].path, F_OK) != 0) {
 		printf("❌Configuration file (%s) does not exist\n", configs[selected].path);
+		rc = 1;
 		goto cleanup;
 	}
 
@@ -340,5 +428,5 @@ cleanup:
 	}
 	free(configs);
 
-	return 0;
+	return rc;
 }

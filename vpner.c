@@ -112,7 +112,7 @@ int handle_input(int count, int *selected) {
 int show_menu(Config *configs, int count) {
 	if(!isatty(STDIN_FILENO)) {
 		fprintf(stderr, "Run me in terminal\n");
-		return 1;
+		return -1;
 	}
 	enable_raw_mode();
 	printf("\033[?25l"); // Hide cursor

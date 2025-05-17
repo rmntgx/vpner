@@ -1,30 +1,30 @@
+#include <fcntl.h>
+#include <limits.h>
 #include <linux/limits.h>
+#include <pwd.h>
+#include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 #include <string.h>
-#include <time.h>
-#include <unistd.h>
-#include <termios.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <signal.h>
-#include <limits.h>
-#include <pwd.h>
-#include <fcntl.h>
+#include <termios.h>
+#include <time.h>
+#include <unistd.h>
 #include "cjson/cJSON.h"
 #include "help.h"
 
 #define STATE_FILE "/tmp/.vpner_state.json"
 
 typedef struct {
-	char *name;
-	char *path;
+	char* name;
+	char* path;
 } Config;
 
 typedef struct {
 	int pid;
-	char *config;
+	char* config;
 } State;
 
 // Terminal handling
@@ -46,23 +46,25 @@ void enable_raw_mode() {
 
 char* get_config_path() {
 	const char* app_name = "vpner";
-	const char *config_home = getenv("XDG_CONFIG_HOME");
+	const char* config_home = getenv("XDG_CONFIG_HOME");
 	char* config_path = malloc(PATH_MAX);
 
 	if (config_home == NULL || config_home[0] == '\0') {
-        const char *home_dir = getenv("HOME");
-        if (home_dir == NULL) {
-            home_dir = getpwuid(getuid())->pw_dir;
-        }
-        snprintf(config_path, PATH_MAX, "%s/.config/%s/configs.json", home_dir, app_name);
-    } else {
-        snprintf(config_path, PATH_MAX, "%s/%s/configs.json", config_home, app_name);
-    }
+		const char* home_dir = getenv("HOME");
+		if (home_dir == NULL) {
+			home_dir = getpwuid(getuid())->pw_dir;
+		}
+		snprintf(config_path, PATH_MAX, "%s/.config/%s/configs.json", home_dir,
+				 app_name);
+	} else {
+		snprintf(config_path, PATH_MAX, "%s/%s/configs.json", config_home,
+				 app_name);
+	}
 	return config_path;
 }
 
 // TUI functions
-void print_menu(Config *configs, int count, int selected) {
+void print_menu(Config* configs, int count, int selected) {
 	printf("\033[33m[?] Select configuration:\033[0m\n");
 	for (int i = 0; i < count; i++) {
 		if (i == selected) {
@@ -73,7 +75,7 @@ void print_menu(Config *configs, int count, int selected) {
 	}
 }
 
-int handle_input(int count, int *selected) {
+int handle_input(int count, int* selected) {
 	char c;
 	while (read(STDIN_FILENO, &c, 1) == 1) {
 		if (c == '\x1b') {
@@ -83,12 +85,16 @@ int handle_input(int count, int *selected) {
 			if (seq[0] == '[') {
 				switch (seq[1]) {
 					case 'A': // Up
-						if (*selected > 0) (*selected)--;
-						else (*selected) = count - 1;
+						if (*selected > 0)
+							(*selected)--;
+						else
+							(*selected) = count - 1;
 						return 1;
 					case 'B': // Down
-						if (*selected < count - 1) (*selected)++;
-						else (*selected) = 0;
+						if (*selected < count - 1)
+							(*selected)++;
+						else
+							(*selected) = 0;
 						return 1;
 				}
 			}
@@ -97,22 +103,26 @@ int handle_input(int count, int *selected) {
 		} else if (c == 'q' || c == '\x03') {
 			return -1;
 		} else if (c == 'k' || c == 'K') {
-			if (*selected > 0) (*selected)--;
-			else (*selected) = count - 1;
+			if (*selected > 0)
+				(*selected)--;
+			else
+				(*selected) = count - 1;
 			return 1;
-		} else if(c == 'j' || c == 'J') {
-			if (*selected < count - 1) (*selected)++;
-			else (*selected) = 0;
+		} else if (c == 'j' || c == 'J') {
+			if (*selected < count - 1)
+				(*selected)++;
+			else
+				(*selected) = 0;
 			return 1;
 		}
 	}
 	return 0;
 }
 
-int show_menu(Config *configs, int count) {
+int show_menu(Config* configs, int count) {
 	if(!isatty(STDIN_FILENO)) {
-		fprintf(stderr, "Run me in terminal\n");
-		return -1;
+			fprintf(stderr, "Run me in terminal\n");
+			return -1;
 	}
 	enable_raw_mode();
 	printf("\033[?25l"); // Hide cursor
@@ -122,18 +132,18 @@ int show_menu(Config *configs, int count) {
 
 	// Initial draw
 	print_menu(configs, count, selected);
-	
+
 	// Move cursor to menu start position and save
 	printf("\033[%dA", menu_lines);
 	printf("\033[s");
-	
+
 	while (1) {
 		int r = handle_input(count, &selected);
 		if (r == 1) {
 			// Redraw menu at saved position
 			printf("\033[u");
 			print_menu(configs, count, selected);
-			
+
 			// Move cursor back to menu start and save again
 			printf("\033[%dA", menu_lines);
 			printf("\033[s");
@@ -157,9 +167,9 @@ int show_menu(Config *configs, int count) {
 }
 
 // Config loading
-Config* load_configs(int *count) {
+Config* load_configs(int* count) {
 	char* config_path = get_config_path();
-	FILE *f = fopen(config_path, "r");
+	FILE* f = fopen(config_path, "r");
 
 	if (!f) {
 		fprintf(stderr, "❌ Error opening %s file\n", config_path);
@@ -170,40 +180,40 @@ Config* load_configs(int *count) {
 	fseek(f, 0, SEEK_END);
 	long len = ftell(f);
 	fseek(f, 0, SEEK_SET);
-	char *data = malloc(len + 1);
-	if(!data) {
+	char* data = malloc(len + 1);
+	if (!data) {
 		fclose(f);
 		return NULL;
 	}
 	size_t ret = fread(data, 1, len, f);
 	fclose(f);
-	if(ret != (size_t)len) {
+	if (ret != (size_t)len) {
 		fprintf(stderr, "❌ Reading error opening configs.json file\n");
 		free(data);
 		return NULL;
 	}
 	data[len] = 0;
 
-	cJSON *root = cJSON_Parse(data);
+	cJSON* root = cJSON_Parse(data);
 	free(data);
 	if (!root) {
 		fprintf(stderr, "❌ Error parsing JSON\n");
 		return NULL;
 	}
-	if(!cJSON_IsObject(root)) return NULL;
+	if (!cJSON_IsObject(root)) return NULL;
 
-	cJSON *configs = cJSON_GetObjectItem(root, "configs");
-	if(!cJSON_IsArray(configs)) return NULL;
+	cJSON* configs = cJSON_GetObjectItem(root, "configs");
+	if (!cJSON_IsArray(configs)) return NULL;
 	*count = cJSON_GetArraySize(configs);
-	Config *result = malloc(sizeof(Config) * (*count));
+	Config* result = malloc(sizeof(Config) * (*count));
 
 	for (int i = 0; i < *count; i++) {
-		cJSON *item = cJSON_GetArrayItem(configs, i);
-		if(!cJSON_IsObject(item)) return NULL;
+		cJSON* item = cJSON_GetArrayItem(configs, i);
+		if (!cJSON_IsObject(item)) return NULL;
 		cJSON* nameitem = cJSON_GetObjectItem(item, "name");
 		cJSON* pathitem = cJSON_GetObjectItem(item, "path");
-		if(!cJSON_IsString(nameitem)) return NULL;
-		if(!cJSON_IsString(pathitem)) return NULL;
+		if (!cJSON_IsString(nameitem)) return NULL;
+		if (!cJSON_IsString(pathitem)) return NULL;
 		result[i].name = strdup(nameitem->valuestring);
 		result[i].path = strdup(pathitem->valuestring);
 	}
@@ -215,35 +225,35 @@ Config* load_configs(int *count) {
 // State handling
 State read_state() {
 	State state = {0};
-	FILE *f = fopen(STATE_FILE, "r");
+	FILE* f = fopen(STATE_FILE, "r");
 	if (!f) return state;
 
 	fseek(f, 0, SEEK_END);
 	long len = ftell(f);
 	fseek(f, 0, SEEK_SET);
-	char *data = malloc(len + 1);
-	if(!data) {
+	char* data = malloc(len + 1);
+	if (!data) {
 		fclose(f);
 		return state;
 	}
 	size_t ret = fread(data, 1, len, f);
 	fclose(f);
-	if(ret != (size_t)len) {
+	if (ret != (size_t)len) {
 		fprintf(stderr, "❌ Reading error opening state file\n");
 		free(data);
 		return state;
 	}
 	data[len] = 0;
 
-	cJSON *root = cJSON_Parse(data);
+	cJSON* root = cJSON_Parse(data);
 	free(data);
 	if (!root) return state;
-	if(!cJSON_IsObject(root)) return state;
-	
+	if (!cJSON_IsObject(root)) return state;
+
 	cJSON* piditem = cJSON_GetObjectItem(root, "pid");
-	if(!cJSON_IsNumber(piditem)) return state;
-	cJSON *config = cJSON_GetObjectItem(root, "config");
-	if(!cJSON_IsString(config)) return state;
+	if (!cJSON_IsNumber(piditem)) return state;
+	cJSON* config = cJSON_GetObjectItem(root, "config");
+	if (!cJSON_IsString(config)) return state;
 	state.config = config ? strdup(config->valuestring) : NULL;
 	state.pid = piditem->valueint;
 
@@ -251,17 +261,17 @@ State read_state() {
 	return state;
 }
 
-void write_state(pid_t pid, const char *config) {
-	cJSON *root = cJSON_CreateObject();
+void write_state(pid_t pid, const char* config) {
+	cJSON* root = cJSON_CreateObject();
 	cJSON_AddNumberToObject(root, "pid", pid);
 	cJSON_AddStringToObject(root, "config", config);
 
-	char *data = cJSON_Print(root);
-	FILE *f = fopen(STATE_FILE, "w");
+	char* data = cJSON_Print(root);
+	FILE* f = fopen(STATE_FILE, "w");
 	if (f) {
 		fputs(data, f);
 		fclose(f);
-	}    
+	}
 	free(data);
 	cJSON_Delete(root);
 }
@@ -283,18 +293,18 @@ void kill_previous_process() {
 }
 
 // Process management
-void start_singbox(const char *config_path) {
+void start_singbox(const char* config_path) {
 	pid_t pid = fork();
 	if (pid == 0) { // Child
 		setsid();
 		FILE* ret = freopen("/dev/null", "r", stdin);
-		if(ret == NULL) exit(EXIT_FAILURE);
+		if (ret == NULL) exit(EXIT_FAILURE);
 		ret = freopen("/dev/null", "w", stdout);
-		if(ret == NULL) exit(EXIT_FAILURE);
+		if (ret == NULL) exit(EXIT_FAILURE);
 		ret = freopen("/dev/null", "w", stderr);
-		if(ret == NULL) exit(EXIT_FAILURE);
+		if (ret == NULL) exit(EXIT_FAILURE);
 
-		char *args[] = {"sing-box", "run", "-c", (char*)config_path, NULL};
+		char* args[] = {"sing-box", "run", "-c", (char*)config_path, NULL};
 		execvp("sing-box", args);
 		exit(EXIT_FAILURE);
 	} else if (pid > 0) { // Parent
@@ -306,87 +316,83 @@ void start_singbox(const char *config_path) {
 }
 
 // Add before main logic
-int parse_args(int argc, char *argv[]) {
-    for (int i = 1; i < argc; i++) {
-		if(argv[i][0] != '-') break;
+int parse_args(int argc, char* argv[]) {
+	for (int i = 1; i < argc; i++) {
+		if (argv[i][0] != '-') break;
 
 		size_t stlen = strlen(argv[i]);
 		bool fullnum = true;
-		for(size_t y = 1; y < stlen; y++) {
-			if(!(argv[i][y] >= '0' && argv[i][y] <= '9')) {
+		for (size_t y = 1; y < stlen; y++) {
+			if (!(argv[i][y] >= '0' && argv[i][y] <= '9')) {
 				fullnum = false;
 				break;
 			}
 		}
-		if(fullnum) {
+		if (fullnum) {
 			return atoi(argv[i] + 1);
-		}
-		else if (strcmp(argv[i], "--help") == 0) {
-            printf(HELP_TEXT); // Use the help text above
-            exit(0);
-        }
-        else if (strcmp(argv[i], "--stop") == 0) {
-            kill_previous_process();
-            exit(0);
-        }
-        else if (strcmp(argv[i], "--status") == 0) {
-            State state = read_state();
-            if (state.pid && kill(state.pid, 0) == 0) {
-                printf("VPN running (PID: %d, Config: %s)\n", state.pid, state.config);
-            } else {
-                printf("No VPN running\n");
-            }
-            exit(0);
-        }
-        else if (strcmp(argv[i], "--list") == 0) {
-            int count;
-            Config *configs = load_configs(&count);
-            for (int i = 0; i < count; i++) {
-                printf("%s (%s)\n", configs[i].name, configs[i].path);
-            }
-            exit(0);
-        }
-        else if (strcmp(argv[i], "--list-rofi") == 0) {
-            int count;
-            Config *configs = load_configs(&count);
-            State state = read_state();
-            if (state.pid && kill(state.pid, 0) == 0) {
+		} else if (strcmp(argv[i], "--help") == 0) {
+			printf(HELP_TEXT); // Use the help text above
+			exit(0);
+		} else if (strcmp(argv[i], "--stop") == 0) {
+			kill_previous_process();
+			exit(0);
+		} else if (strcmp(argv[i], "--status") == 0) {
+			State state = read_state();
+			if (state.pid && kill(state.pid, 0) == 0) {
+				printf("VPN running (PID: %d, Config: %s)\n", state.pid,
+					   state.config);
+			} else {
+				printf("No VPN running\n");
+			}
+			exit(0);
+		} else if (strcmp(argv[i], "--list") == 0) {
+			int count;
+			Config* configs = load_configs(&count);
+			for (int i = 0; i < count; i++) {
+				printf("%s (%s)\n", configs[i].name, configs[i].path);
+			}
+			exit(0);
+		} else if (strcmp(argv[i], "--list-rofi") == 0) {
+			int count;
+			Config* configs = load_configs(&count);
+			State state = read_state();
+			if (state.pid && kill(state.pid, 0) == 0) {
 				for (int i = 0; i < count; i++) {
-					if(strcmp(configs[i].path, state.config) == 0)
+					if (strcmp(configs[i].path, state.config) == 0)
 						printf("✔️ %s\n", configs[i].name);
 					else
 						printf("%i) %s\n", i + 1, configs[i].name);
 				}
-            } else {
+			} else {
 				for (int i = 0; i < count; i++) {
 					printf("%i) %s\n", i + 1, configs[i].name);
 				}
-            }
-            exit(0);
-        }
-    }
-    return -1;
+			}
+			exit(0);
+		}
+	}
+	return -1;
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
 	int selected = parse_args(argc, argv);
 	int rc = 0;
 
 	// Load configurations
 	int config_count;
-	Config *configs = load_configs(&config_count);
+	Config* configs = load_configs(&config_count);
 	if (!configs || config_count == 0) {
 		fprintf(stderr, "❌ No configurations found\n");
 		return 1;
 	}
 
-	if(selected != -1 && (selected < 1 || selected > config_count)) {
+	if (selected != -1 && (selected < 1 || selected > config_count)) {
 		fprintf(stderr, "❌  Incorrect selection\n");
 		rc = 1;
 		goto cleanup;
 	}
 
-	if(selected == -1) {
+	if (selected == -1) {
 		// Show TUI
 		selected = show_menu(configs, config_count);
 		if (selected < 0) {
@@ -401,7 +407,7 @@ int main(int argc, char *argv[]) {
 	// Check if config changed
 	State state = read_state();
 	if (state.config && strcmp(configs[selected].path, state.config) == 0) {
-		if(kill(state.pid, 0) == 0) { // check process exists
+		if (kill(state.pid, 0) == 0) { // check process exists
 			printf("🔁 Configuration unchanged\n");
 			free(state.config);
 			rc = 1;
@@ -411,7 +417,8 @@ int main(int argc, char *argv[]) {
 	free(state.config);
 
 	if (access(configs[selected].path, F_OK) != 0) {
-		printf("❌Configuration file (%s) does not exist\n", configs[selected].path);
+		printf("❌Configuration file (%s) does not exist\n",
+			   configs[selected].path);
 		rc = 1;
 		goto cleanup;
 	}
@@ -419,7 +426,7 @@ int main(int argc, char *argv[]) {
 	// Start new process
 	kill_previous_process();
 	start_singbox(configs[selected].path);
-	
+
 cleanup:
 	// Cleanup
 	for (int i = 0; i < config_count; i++) {

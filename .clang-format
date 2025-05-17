@@ -1,0 +1,8 @@
+{
+  BasedOnStyle: Chromium,
+  SpacesBeforeTrailingComments: 1,
+  AllowShortIfStatementsOnASingleLine: WithoutElse,
+  UseTab: Always,
+  IndentWidth: 4,
+  TabWidth: 4
+}

@@ -6,7 +6,8 @@
     },
     {
       "name": "Example server 2",
-      "path": "/home/user/vpn_configs/example_config_2.json"
+      "path": "/home/user/vpn_configs/example_config_2.json",
+	  "run_as_root": true
     }
   ]
 }

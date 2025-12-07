@@ -7,6 +7,7 @@ Options:\n\
   --stop      Stop the currently running VPN connection\n\
   --status    Show current VPN connection status\n\
   --list      List available configurations without starting\n\
+  --create/-c Manage configurations\n\
 \n\
 Interactive Controls:\n\
   Arrow Up/k         Move selection up\n\

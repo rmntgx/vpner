@@ -42,7 +42,6 @@ void print_menu(Config* configs, int count, int selected) {
 int handle_input(int count, int* selected) {
 	char c;
 	while (read(STDIN_FILENO, &c, 1) == 1) {
-		printf("debug readed: %d", (int)(c));
 		if (c == '\x1b') {
 			char seq[2];
 			if (read(STDIN_FILENO, &seq[0], 1) != 1) return 0;
@@ -159,7 +158,6 @@ State read_state() {
 }
 
 void write_state(pid_t pid, const char* config) {
-	printf("DEBUG: writing state"); //TODO: delete on release
 	cJSON* root = cJSON_CreateObject();
 	cJSON_AddNumberToObject(root, "pid", pid);
 	cJSON_AddStringToObject(root, "config", config);

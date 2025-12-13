@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra
+CFLAGS = -Wall -Wextra -I./src
 LDFLAGS = -lcjson -lreadline
 RELEASE_FLAGS = -Os
 DEBUG_FLAGS = -g

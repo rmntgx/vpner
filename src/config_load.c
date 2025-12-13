@@ -133,7 +133,9 @@ bool modify_config(cJSON* outbound, const char* config_path) {
 		}
 	}
 	cJSON_InsertItemInArray(outb, 0, outbound);
-	char* newcont = cJSON_Print(root);
+	char* unfout = cJSON_PrintUnformatted(root);
+	char* newcont = format_json(unfout);
+	free(unfout);
 
 	FILE* f = fopen(config_path, "w");
 	if(!f) {
@@ -179,7 +181,9 @@ bool new_conffile(const char* config_path, const char* content) {
 	cJSON_AddItemToObject(newcfg, "path", cJSON_CreateString(config_path));
 	cJSON_InsertItemInArray(configs, 0, newcfg);
 
-	char* newcont = cJSON_Print(root);
+	char* unfout = cJSON_PrintUnformatted(root);
+	char* newcont = format_json(unfout);
+	free(unfout);
 	cJSON_Delete(root);
 
 	f = fopen(vpner_path, "w");

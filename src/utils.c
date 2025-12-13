@@ -7,6 +7,25 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <ctype.h>
+#include <termios.h>
+
+struct termios orig_termios;
+
+void disable_raw_mode() {
+	tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
+}
+
+void enable_raw_mode() {
+	tcgetattr(STDIN_FILENO, &orig_termios);	
+	atexit(disable_raw_mode);
+	fflush(stdout);
+	tcflush(STDIN_FILENO, TCIFLUSH);
+	struct termios raw = orig_termios;
+	raw.c_lflag &= ~(ECHO | ICANON | ISIG); // Disable signal processing
+	raw.c_cc[VMIN] = 1;
+	raw.c_cc[VTIME] = 0;
+	tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+}
 
 static char* urldecode(const char* s) {
 	if (!s) return NULL;
@@ -91,6 +110,67 @@ char* file_readall(const char* path) {
 	}
 	data[len] = 0;
 	return data;
+}
+
+char* format_json(const char* input) {
+    size_t len = strlen(input);
+    size_t capacity = len * 2 + 100;
+    char* out = malloc(capacity);
+    if (!out) return NULL;
+    
+    size_t pos = 0;
+    int indent = 0, in_str = 0, esc = 0;
+
+    for (size_t i = 0; i < len; i++) {
+        char c = input[i];
+        if (pos + 32 >= capacity) {
+            capacity *= 2;
+            char* tmp = realloc(out, capacity);
+            if (!tmp) { free(out); return NULL; }
+            out = tmp;
+        }
+
+        if (in_str) {
+            out[pos++] = c;
+            if (esc) esc = 0;
+            else if (c == '\\') esc = 1;
+            else if (c == '"') in_str = 0;
+            continue;
+        }
+
+        switch (c) {
+			case '"':
+				in_str = 1;
+				esc = 0;
+				out[pos++] = c;
+				break;
+			case '{': case '[':
+				out[pos++] = c;
+				out[pos++] = '\n';
+				indent++;
+				for (int j = 0; j < indent * 2; j++) out[pos++] = ' ';
+				break;
+			case '}': case ']':
+				out[pos++] = '\n';
+				if (indent) indent--;
+				for (int j = 0; j < indent * 2; j++) out[pos++] = ' ';
+				out[pos++] = c;
+				break;
+			case ':':
+				out[pos++] = c;
+				out[pos++] = ' ';
+				break;
+			case ',':
+				out[pos++] = c;
+				out[pos++] = '\n';
+				for (int j = 0; j < indent * 2; j++) out[pos++] = ' ';
+				break;
+			default:
+				if (!isspace((unsigned char)c)) out[pos++] = c;
+        }
+    }
+    out[pos] = '\0';
+    return out;
 }
 
 #endif

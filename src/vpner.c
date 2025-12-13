@@ -15,9 +15,8 @@
 #include "cjson/cJSON.h"
 #include "config_load.c"
 #include "help.h"
-#include "create_tui.c"
-#include <readline/readline.h>
-#include <readline/history.h>
+#include "urlconfig/urlconfig.h"
+#include "tui_main.c"
 
 #define STATE_FILE "/tmp/.vpner_state.json"
 
@@ -26,121 +25,11 @@ typedef struct {
 	char* config;
 } State;
 
-
-// TUI functions
-void print_menu(Config* configs, int count, int selected) {
-	printf("\033[33m[?] Select configuration:\033[0m\n");
-	for (int i = 0; i < count; i++) {
-		if (i == selected) {
-			printf("\033[94m> %s\033[0m\n", configs[i].name);
-		} else {
-			printf("  %s\n", configs[i].name);
-		}
-	}
-}
-
-int handle_input(int count, int* selected) {
-	char c;
-	while (read(STDIN_FILENO, &c, 1) == 1) {
-		if (c == '\x1b') {
-			char seq[2];
-			if (read(STDIN_FILENO, &seq[0], 1) != 1) return 0;
-			if (read(STDIN_FILENO, &seq[1], 1) != 1) return 0;
-			if (seq[0] == '[') {
-				switch (seq[1]) {
-					case 'A': // Up
-						if (*selected > 0) (*selected)--;
-						else (*selected) = count - 1;
-						return 1;
-					case 'B': // Down
-						if (*selected < count - 1) (*selected)++;
-						else (*selected) = 0;
-						return 1;
-				}
-			}
-		} else if (c == '\n') {
-			return 2;
-		} else if (c == 'q' || c == '\x03') {
-			return -1;
-		} else if (c == 'k' || c == 'K') {
-			if (*selected > 0) (*selected)--;
-			else (*selected) = count - 1;
-			return 1;
-		} else if (c == 'j' || c == 'J') {
-			if (*selected < count - 1) (*selected)++;
-			else (*selected) = 0;
-			return 1;
-		}
-	}
-	return 0;
-}
-
-int show_menu(Config* configs, int count) {
-	if(!isatty(STDIN_FILENO)) {
-			fprintf(stderr, "Run me in terminal\n");
-			return -1;
-	}
-	enable_raw_mode();
-	printf("\033[?25l"); // Hide cursor
-	int selected = 0;
-	int result = -1;
-	int menu_lines = count + 1; // Header + items
-
-	// Initial draw
-	print_menu(configs, count, selected);
-
-	// Move cursor to menu start position and save
-	printf("\033[%dA", menu_lines);
-	printf("\033[s");
-
-	while (1) {
-		int r = handle_input(count, &selected);
-		if (r == 1) {
-			// Redraw menu at saved position
-			printf("\033[u");
-			print_menu(configs, count, selected);
-			printf("\033[u");
-			fflush(stdout);
-		} else if (r == 2 || r == -1) {
-			result = (r == 2) ? selected : -1;
-			break;
-		}
-	}
-
-	// Clear menu area on exit
-	printf("\033[u");
-	for (int i = 0; i < menu_lines; i++) printf("\033[K\n");
-	printf("\033[u");
-
-	printf("\033[?25h"); // Show cursor
-	disable_raw_mode();
-	return result;
-}
-
-
 // State handling
 State read_state() {
 	State state = {0};
-	FILE* f = fopen(STATE_FILE, "r");
-	if (!f) return state;
-
-	fseek(f, 0, SEEK_END);
-	long len = ftell(f);
-	fseek(f, 0, SEEK_SET);
-	char* data = malloc(len + 1);
-	if (!data) {
-		fclose(f);
-		return state;
-	}
-	size_t ret = fread(data, 1, len, f);
-	fclose(f);
-	if (ret != (size_t)len) {
-		fprintf(stderr, "❌ Reading error opening state file\n");
-		free(data);
-		return state;
-	}
-	data[len] = 0;
-
+	char* data = file_readall(STATE_FILE);
+	if(!data) return state;
 	cJSON* root = cJSON_Parse(data);
 	free(data);
 	if (!root) return state;
@@ -314,162 +203,7 @@ int parse_args(int argc, char* argv[]) {
 			}
 			exit(0);
 		} else if (strcmp(argv[i], "--create") == 0 || strcmp(argv[i], "-c") == 0) {
-			printf("\033[s");
-			const char* opts[] = {
-				"New full config",
-				"Update outbound"
-			};
-			const char* helps[] = {
-				"A new config file will be created",
-				"Outbound in the existing config will be replaced"
-			};
-			
-			enable_raw_mode();
-			int idx = tui_select_from_list("Config mode", helps, opts, 2, 0);
-			if(idx == -1) {
-				printf("\033[u");
-				printf("\033[?25h");
-				fprintf(stderr, "❌ Creation cancelled\n");
-				disable_raw_mode();
-				exit(1);
-			}
-			if(idx == 0) {
-				char* url = NULL;
-				ConfigOptions* cfgopt = create_cfgopt(&url);
-				if (!cfgopt) { 
-					printf("\033[u");
-					printf("\033[?25h");
-					disable_raw_mode();
-					printf("❌ Creation cancelled\n");
-					exit(1);
-				}
-
-				Bean* b = parse_url(url);
-				if (!b) {
-					printf("\033[u");
-					printf("\033[?25h");
-					disable_raw_mode();
-					fprintf(stderr, "❌ Invalid URL\n");
-					exit(2);
-				}
-
-				cJSON* outbound_obj = generate_outbound_obj(b);
-				if (!outbound_obj) { 
-					printf("\033[u");
-					printf("\033[?25h");
-					disable_raw_mode();
-					fprintf(stderr, "❌ Failed to generate outbound\n"); 
-					exit(3);
-				}
-
-				char* full = generate_full_config_str(outbound_obj, cfgopt);
-				if (!full) {
-					printf("\033[u");
-					printf("\033[?25h");
-					disable_raw_mode();
-					fprintf(stderr, "❌ Failed to generate full config\n");
-					exit(4);
-				}
-	
-				int cnt_cfg;
-				char** cfgs = get_configs_paths(&cnt_cfg);
-				char** options = malloc((cnt_cfg + 1) * sizeof(char*));
-				for(int i = 0; i < cnt_cfg; i++) options[i + 1] = cfgs[i];
-				options[0] = strdup("New");
-				
-				int idx = tui_select_from_list("Select folder", NULL, (const char**)options, cnt_cfg + 1, 0);
-				if(idx == -1) idx = 0;
-					
-				printf("\033[u");
-				printf("\033[?25h");
-				disable_raw_mode();
-
-				char* path;
-				if(idx == 0) {
-					path = readline("\033[92mFull path to the new file: \033[0m");
-				} else {
-					char *name = readline("\033[92mFile name: \033[0m");
-					path = malloc(PATH_MAX);
-					strcpy(path, options[idx]);
-					strcat(path, "/");
-					strcat(path, name);
-				}
-				
-				bool suc = new_conffile(path, full);
-
-				if(suc) {
-					printf("\033[92mConfig has been successfully created\033[0m\n");
-				} else {
-					fprintf(stderr, "\033[91mFatal errors occurred while creating the config\033[0m\n");
-				}
-
-				for(int i = 0; i <= cnt_cfg; i++) free(options[i]);
-				free(options);
-				free(cfgs);
-				free(path);
-				// printf("\n\033[92mGenerated sing-box config:\033[0m\n%s\n", full);
-			} else {
-				printf("\033[u");
-				printf("\033[?25h");
-				disable_raw_mode();
-
-				char* urlbuf = NULL;
-				Bean* b = NULL;
-				while(!b) {
-					char *urlbuf = readline("\033[92mURL: \033[0m");
-				    if (!urlbuf || !urlbuf[0]) {
-						b = NULL;
-					} else {
-						b = parse_url(urlbuf);
-					}
-					if (!b) fprintf(stderr, "❌ Invalid URL\n");
-				}
-				cJSON* outbound_obj = generate_outbound_obj(b);
-				if (!outbound_obj) { fprintf(stderr, "❌ Failed to generate outbound\n"); exit(3); }
-
-				size_t cfg_cnt;
-				Config* cfgs = load_configs(&cfg_cnt);
-				if(!cfgs || cfg_cnt == 0) {
-					fprintf(stderr, "❌ No configs for modification\n");
-					exit(1);
-				}
-				const char** menuitems = malloc(cfg_cnt * sizeof(char*));
-				for(size_t i = 0; i < cfg_cnt; i++) menuitems[i] = cfgs[i].name;
-				const char** menuhelps = malloc(cfg_cnt * sizeof(char*));
-				for(size_t i = 0; i < cfg_cnt; i++) menuhelps[i] = cfgs[i].path;
-				
-				printf("\033[u"); // restore
-				printf("\033[J"); // clear below
-
-				enable_raw_mode();
-				int idx = tui_select_from_list("Config for modification", menuhelps, menuitems, cfg_cnt, 0);
-				if(idx == -1) {
-					printf("\033[u");
-					printf("\033[?25h");
-					fprintf(stderr, "❌ Creation cancelled\n");
-					disable_raw_mode();
-					exit(1);
-				}
-				disable_raw_mode();
-				printf("\033[u");
-				printf("\033[?25h");
-
-				for(size_t i = 0; i < cfg_cnt; i++) free(cfgs[i].name);
-				free(menuitems);
-				free(menuhelps);
-				if(urlbuf) free(urlbuf);
-
-				bool suc = modify_config(outbound_obj, cfgs[idx].path);
-
-				if(suc) {
-					printf("\033[92mConfig has been successfully modified\033[0m\n");
-				} else {
-					fprintf(stderr, "\033[91mFatal errors occurred while modifying the config\033[0m\n");
-				}
-
-				free(cfgs);
-			}
-
+			launch_urlconfig_tui();
 			exit(0);
 		}
 	}
@@ -477,7 +211,6 @@ int parse_args(int argc, char* argv[]) {
 }
 
 int main(int argc, char* argv[]) {
-	tcgetattr(STDIN_FILENO, &orig_termios);
 	printf("\033[s");
 	printf("\033[J"); // clear below
 	int selected = parse_args(argc, argv);
@@ -498,7 +231,7 @@ int main(int argc, char* argv[]) {
 
 	if (selected == -1) {
 		// Show TUI
-		selected = show_menu(configs, config_count);
+		selected = launch_main_tui(configs, config_count);
 		if (selected < 0) {
 			printf("❌ Selection cancelled\n");
 			rc = 1;

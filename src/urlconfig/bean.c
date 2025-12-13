@@ -1,3 +1,6 @@
+#ifndef BEAN_C
+#define BEAN_C
+
 typedef enum {
 	BEAN_UNKNOWN = 0,
 	BEAN_VMESS_VLESS,
@@ -150,3 +153,5 @@ static void apply_query_to_bean(Bean* b, const char* query) {
 	}
 	free(qcopy);
 }
+
+#endif

@@ -179,7 +179,7 @@ bool new_conffile(const char* config_path, const char* content) {
 	cJSON_AddItemToObject(newcfg, "name", cJSON_CreateString(sl));
 	free(name);
 	cJSON_AddItemToObject(newcfg, "path", cJSON_CreateString(config_path));
-	cJSON_InsertItemInArray(configs, 0, newcfg);
+	cJSON_InsertItemInArray(configs, cJSON_GetArraySize(configs), newcfg);
 
 	char* unfout = cJSON_PrintUnformatted(root);
 	char* newcont = format_json(unfout);

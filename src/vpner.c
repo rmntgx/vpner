@@ -211,6 +211,7 @@ int parse_args(int argc, char* argv[]) {
 }
 
 int main(int argc, char* argv[]) {
+	tcgetattr(STDIN_FILENO, &orig_termios);	
 	printf("\033[s");
 	printf("\033[J"); // clear below
 	int selected = parse_args(argc, argv);

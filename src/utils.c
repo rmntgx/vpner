@@ -16,7 +16,6 @@ void disable_raw_mode() {
 }
 
 void enable_raw_mode() {
-	tcgetattr(STDIN_FILENO, &orig_termios);	
 	atexit(disable_raw_mode);
 	fflush(stdout);
 	tcflush(STDIN_FILENO, TCIFLUSH);

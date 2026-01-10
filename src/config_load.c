@@ -38,7 +38,7 @@ char* get_config_path() {
 
 Config* load_configs(size_t* count) {
 	char* config_path = get_config_path();
-	char* cont = file_readall(config_path);
+	char* cont = file_readall(config_path, false);
 	if(!cont) return NULL;
 	cJSON* root = cJSON_Parse(cont);
 	free(cont);
@@ -109,7 +109,7 @@ char** get_configs_paths(int* count) {
 }
 
 bool modify_config(cJSON* outbound, const char* config_path) {
-	char* cont = file_readall(config_path);
+	char* cont = file_readall(config_path, false);
 	if(!cont) return false;
 	cJSON* root = cJSON_Parse(cont);
 	free(cont);
@@ -162,7 +162,7 @@ bool new_conffile(const char* config_path, const char* content) {
 	fclose(f);
 
 	char* vpner_path = get_config_path();
-	char* cont = file_readall(vpner_path);
+	char* cont = file_readall(vpner_path, false); // false = verbose
 	if(!cont) return false;
 	cJSON* root = cJSON_Parse(cont);
 	free(cont);

@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <linux/limits.h>
@@ -28,7 +29,7 @@ typedef struct {
 // State handling
 State read_state() {
 	State state = {0};
-	char* data = file_readall(STATE_FILE);
+	char* data = file_readall(STATE_FILE, true);
 	if(!data) return state;
 	cJSON* root = cJSON_Parse(data);
 	free(data);
@@ -203,6 +204,9 @@ int parse_args(int argc, char* argv[]) {
 			}
 			exit(0);
 		} else if (strcmp(argv[i], "--create") == 0 || strcmp(argv[i], "-c") == 0) {
+			tcgetattr(STDIN_FILENO, &orig_termios);	
+			printf("\033[s");
+			printf("\033[J"); // clear below
 			launch_urlconfig_tui();
 			exit(0);
 		}
@@ -211,9 +215,6 @@ int parse_args(int argc, char* argv[]) {
 }
 
 int main(int argc, char* argv[]) {
-	tcgetattr(STDIN_FILENO, &orig_termios);	
-	printf("\033[s");
-	printf("\033[J"); // clear below
 	int selected = parse_args(argc, argv);
 	int rc = 0;
 	// Load configurations
@@ -224,7 +225,7 @@ int main(int argc, char* argv[]) {
 		return 1;
 	}
 
-	if (selected != -1 && (selected < 1 || selected > config_count)) {
+	if (selected != -1 && (selected < 1 || selected > (int)config_count)) {
 		fprintf(stderr, "❌  Incorrect selection\n");
 		rc = 1;
 		goto cleanup;
@@ -232,6 +233,9 @@ int main(int argc, char* argv[]) {
 
 	if (selected == -1) {
 		// Show TUI
+		tcgetattr(STDIN_FILENO, &orig_termios);	
+		printf("\033[s");
+		printf("\033[J"); // clear below
 		selected = launch_main_tui(configs, config_count);
 		if (selected < 0) {
 			printf("❌ Selection cancelled\n");

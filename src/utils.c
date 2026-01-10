@@ -86,10 +86,10 @@ static void trim_inplace(char* s) {
 	while (l > 0 && isspace(s[l - 1])) s[--l] = 0;
 }
 
-char* file_readall(const char* path) {
+char* file_readall(const char* path, bool quite) {
 	FILE* f = fopen(path, "r");
 	if (!f) {
-		fprintf(stderr, "❌ Error opening %s file\n", path);
+		if(!quite) fprintf(stderr, "❌ Error opening %s file\n", path);
 		return NULL;
 	}
 	fseek(f, 0, SEEK_END);
@@ -103,7 +103,7 @@ char* file_readall(const char* path) {
 	size_t ret = fread(data, 1, len, f);
 	fclose(f);
 	if (ret != (size_t)len) {
-		fprintf(stderr, "❌ Error reading %s file\n", path);
+		if(!quite) fprintf(stderr, "❌ Error reading %s file\n", path);
 		free(data);
 		return NULL;
 	}

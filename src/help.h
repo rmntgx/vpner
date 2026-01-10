@@ -1,13 +1,13 @@
-const char* HELP_TEXT = "VPNer - Simple VPN Configuration Launcher\n\
+const char* HELP_TEXT = "VPNer - Simple sing-box Configuration Launcher\n\
 \n\
 Usage: vpner [OPTION]\n\
 \n\
 Options:\n\
-  --help        Show this help message and exit\n\
-  --stop        Stop the currently running VPN connection\n\
+  --help/-h     Show help and exit\n\
+  --stop/-s     Stop a running sing-box\n\
   --log/-l      View sing-box logs\n\
-  --status      Show current VPN connection status\n\
-  --list        List available configurations without starting\n\
+  --status      Show sing-box status\n\
+  --list        List available configurations\n\
   --create/-c   Manage configurations\n\
 \n\
 Interactive Controls:\n\

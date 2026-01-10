@@ -221,10 +221,10 @@ int parse_args(int argc, char* argv[]) {
 		}
 		if (fullnum) {
 			return atoi(argv[i] + 1);
-		} else if (strcmp(argv[i], "--help") == 0) {
+		} else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
 			printf(HELP_TEXT); // Use the help text above
 			exit(0);
-		} else if (strcmp(argv[i], "--stop") == 0) {
+		} else if (strcmp(argv[i], "--stop") == 0 || strcmp(argv[i], "-s") == 0) {
 			kill_previous_process();
 			exit(0);
 		} else if (strcmp(argv[i], "--log") == 0 || strcmp(argv[i], "-l") == 0) {
@@ -233,10 +233,10 @@ int parse_args(int argc, char* argv[]) {
 		} else if (strcmp(argv[i], "--status") == 0) {
 			State state = read_state();
 			if (state.pid && getpgid(state.pid) >= 0) {
-				printf("VPN running (PID: %d, Config: %s)\n", state.pid,
+				printf("sing-box running (PID: %d, Config: %s)\n", state.pid,
 					   state.config);
 			} else {
-				printf("No VPN running\n");
+				printf("No sing-box running\n");
 			}
 			exit(0);
 		} else if (strcmp(argv[i], "--list") == 0) {

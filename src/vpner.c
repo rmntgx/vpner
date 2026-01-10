@@ -80,13 +80,16 @@ void kill_previous_process() {
 		} else { // run from root
 			char self_path[4096];
 			ssize_t len = readlink("/proc/self/exe", self_path, sizeof(self_path) - 1);
-			if (len == -1) {
-				perror("❌ Failed to resolve /proc/self/exe");
-				return;
-			}
+			assert(len != -1);
 			self_path[len] = '\0';
-            char* args[] = {"pkexec", self_path, "--stop", NULL};
-            exit(execvp("pkexec", args));
+			pid_t pid = fork();
+			if (pid == 0) {
+				char* args[] = {"sudo", "-k", self_path, "--stop", NULL};
+				execvp("sudo", args);
+			} else {
+				printf("🔐 Waiting for password...\n");
+				waitpid(pid, NULL, 0);
+			}
 		}
 	} else {
 		printf("⚠️ Previous process not running\n");
@@ -129,14 +132,13 @@ void start_singbox(const char* config_path, bool run_as_root) {
 				return;
 			}
 			self_path[len] = '\0';
-            char* args[] = {"pkexec", self_path, "--run-root-internal", (char*)config_path, NULL};
-            execvp("pkexec", args);
-            perror("❌ Failed to exec pkexec");
+            char* args[] = {"sudo", "-k", self_path, "--run-root-internal", (char*)config_path, NULL};
+            execvp("sudo", args);
+            perror("❌ Failed to exec sudo");
             exit(EXIT_FAILURE);
         } else if (pid > 0) {
-            printf("🔐 Waiting for pkexec...\n");
+            printf("🔐 Waiting for password...\n");
             waitpid(pid, NULL, 0);
-            printf("✅ pkexec process complete\n");
         } else {
             perror("❌ Fork failed");
         }
@@ -172,7 +174,7 @@ int parse_args(int argc, char* argv[]) {
 			exit(0);
 		} else if (strcmp(argv[i], "--status") == 0) {
 			State state = read_state();
-			if (state.pid && kill(state.pid, 0) == 0) {
+			if (state.pid && getpgid(state.pid) >= 0) {
 				printf("VPN running (PID: %d, Config: %s)\n", state.pid,
 					   state.config);
 			} else {
@@ -190,7 +192,7 @@ int parse_args(int argc, char* argv[]) {
 			size_t count;
 			Config* configs = load_configs(&count);
 			State state = read_state();
-			if (state.pid && kill(state.pid, 0) == 0) {
+			if (state.pid && getpgid(state.pid) >= 0) {
 				for (size_t i = 0; i < count; i++) {
 					if (strcmp(configs[i].path, state.config) == 0)
 						printf("✔️ %s\n", configs[i].name);
@@ -251,7 +253,7 @@ int main(int argc, char* argv[]) {
 	// Check if config changed
 	State state = read_state();
 	if (state.config && strcmp(sel_config.path, state.config) == 0) {
-		if (kill(state.pid, 0) == 0) { // check process exists
+		if (getpgid(state.pid) >= 0) { // check process exists
 			printf("🔁 Configuration unchanged\n");
 			free(state.config);
 			rc = 1;

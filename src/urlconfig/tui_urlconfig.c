@@ -160,8 +160,8 @@ static void tui_clear_menu_block(int menu_lines) {
    -1 - cancel
 */
 static int handle_get_cfgopt(int count, int *selected,
-                               char *urlbuf, int url_cap, int *url_len, int *url_cursor,
-                               char *portbuf, int port_cap, int *port_len, int *port_cursor,
+                               char *urlbuf, int *url_len, int *url_cursor,
+                               char *portbuf, int *port_len, int *port_cursor,
                                ConfigOptions *opt, int menu_lines) {
     char c;
     if (read(STDIN_FILENO, &c, 1) != 1) return 0;
@@ -256,7 +256,7 @@ static int handle_get_cfgopt(int count, int *selected,
                 (*url_cursor)--; (*url_len)--;
             }
             return 1;
-        } else if (isprint((unsigned char)c) && *url_len < url_cap - 1) {
+        } else if (isprint((unsigned char)c) && *url_len < URL_BUF_SIZE - 1) {
             memmove(&urlbuf[*url_cursor + 1], &urlbuf[*url_cursor], (*url_len) - (*url_cursor) + 1);
             urlbuf[*url_cursor] = c;
             (*url_cursor)++; (*url_len)++;
@@ -322,8 +322,8 @@ ConfigOptions* tui_get_cfgopt(char **out_url) {
     int result = 0;
     while (1) {
     int r = handle_get_cfgopt(items, &selected,
-                                urlbuf, URL_BUF_SIZE, &url_len, &url_cursor,
-                                portbuf, PORT_BUF_SIZE, &port_len, &port_cursor,
+                                urlbuf, &url_len, &url_cursor,
+                                portbuf, &port_len, &port_cursor,
                                 opt, menu_lines);
         if (r == 1) { // redraw
             printf("\033[u");

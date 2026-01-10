@@ -3,11 +3,12 @@ const char* HELP_TEXT = "VPNer - Simple VPN Configuration Launcher\n\
 Usage: vpner [OPTION]\n\
 \n\
 Options:\n\
-  --help      Show this help message and exit\n\
-  --stop      Stop the currently running VPN connection\n\
-  --status    Show current VPN connection status\n\
-  --list      List available configurations without starting\n\
-  --create/-c Manage configurations\n\
+  --help        Show this help message and exit\n\
+  --stop        Stop the currently running VPN connection\n\
+  --log/-l      View sing-box logs\n\
+  --status      Show current VPN connection status\n\
+  --list        List available configurations without starting\n\
+  --create/-c   Manage configurations\n\
 \n\
 Interactive Controls:\n\
   Arrow Up/k         Move selection up\n\

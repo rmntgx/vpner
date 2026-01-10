@@ -20,6 +20,7 @@
 #include "tui_main.c"
 
 #define STATE_FILE "/tmp/.vpner_state.json"
+#define LOG_FILE "/tmp/.vpner_log.txt"
 
 typedef struct {
 	int pid;
@@ -67,9 +68,46 @@ void write_state(pid_t pid, const char* config) {
 	cJSON_Delete(root);
 }
 
+void show_logs() {
+	if (access(LOG_FILE, F_OK) == 0) {
+		pid_t pid = fork();
+		if (pid == 0) {
+			char* args[] = {"less", LOG_FILE, NULL};
+			execvp("less", args);
+			char* args2[] = {"more", LOG_FILE, NULL};
+			execvp("more", args2);
+			char* log_content = file_readall(LOG_FILE, false);
+			if (log_content != NULL) {
+				printf("Sing-box logs:\n");
+				printf("%s", log_content);
+				free(log_content);
+			}
+			exit(0);
+		} else if (pid > 0) {
+			int status;
+			waitpid(pid, &status, 0);
+		} else {
+			perror("❌ Fork failed");
+		}
+	} else {
+		printf("❌ There are no logs\n");
+	}
+}
+
+void show_logs_prompt(const char* message) {
+	printf("%s", message);
+	printf("Show logs? [Y/n]: ");
+	char response;
+	scanf(" %c", &response);
+	if (response == 'Y' || response == 'y' || response == '\n') {
+		show_logs();
+	}
+}
+
 void kill_previous_process() {
 	State state = read_state();
 	if (state.pid == 0) return;
+
 	// Check if process exists
 	bool process_exists = (getpgid(state.pid) >= 0);
 	bool process_killable = (kill(state.pid, 0) == 0);
@@ -92,7 +130,14 @@ void kill_previous_process() {
 			}
 		}
 	} else {
-		printf("⚠️ Previous process not running\n");
+		// Process in state file doesn't exist, prompt for logs
+		if (access(LOG_FILE, F_OK) == 0) {
+			char message[256];
+			snprintf(message, sizeof(message), "⚠️ Previous process (PID: %d) not running\n", state.pid);
+			show_logs_prompt(message);
+		} else {
+			printf("⚠️ Previous process (PID: %d) not running\n", state.pid);
+		}
 	}
 
 	remove(STATE_FILE);
@@ -104,8 +149,18 @@ void run_singbox_in_fork(const char* config_path) {
     if (pid == 0) {
         setsid();
         freopen("/dev/null", "r", stdin);
-        freopen("/dev/null", "w", stdout);
-        freopen("/dev/null", "w", stderr);
+
+        // Create log file path
+        char log_path[PATH_MAX];
+        snprintf(log_path, sizeof(log_path), LOG_FILE);
+
+        // Redirect both stdout and stderr to the same log file
+        FILE* log_file = fopen(log_path, "w");
+        if (log_file) {
+            fclose(log_file);
+            freopen(log_path, "w", stdout);
+            freopen(log_path, "w", stderr);
+        }
 
         char* args[] = {"sing-box", "run", "-c", (char*)config_path, NULL};
         execvp("sing-box", args);
@@ -172,6 +227,9 @@ int parse_args(int argc, char* argv[]) {
 		} else if (strcmp(argv[i], "--stop") == 0) {
 			kill_previous_process();
 			exit(0);
+		} else if (strcmp(argv[i], "--log") == 0 || strcmp(argv[i], "-l") == 0) {
+            show_logs();
+            exit(0);
 		} else if (strcmp(argv[i], "--status") == 0) {
 			State state = read_state();
 			if (state.pid && getpgid(state.pid) >= 0) {
@@ -206,7 +264,7 @@ int parse_args(int argc, char* argv[]) {
 			}
 			exit(0);
 		} else if (strcmp(argv[i], "--create") == 0 || strcmp(argv[i], "-c") == 0) {
-			tcgetattr(STDIN_FILENO, &orig_termios);	
+			tcgetattr(STDIN_FILENO, &orig_termios);
 			printf("\033[s");
 			printf("\033[J"); // clear below
 			launch_urlconfig_tui();
@@ -228,7 +286,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	if (selected != -1 && (selected < 1 || selected > (int)config_count)) {
-		fprintf(stderr, "❌  Incorrect selection\n");
+		fprintf(stderr, "❌ Incorrect selection\n");
 		rc = 1;
 		goto cleanup;
 	}

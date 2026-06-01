@@ -25,13 +25,14 @@
 typedef struct {
 	int pid;
 	char* config;
+	time_t mtime;
 } State;
 
 // State handling
 State read_state() {
 	State state = {0};
 	char* data = file_readall(STATE_FILE, true);
-	if(!data) return state;
+	if (!data) return state;
 	cJSON* root = cJSON_Parse(data);
 	free(data);
 	if (!root) return state;
@@ -43,21 +44,26 @@ State read_state() {
 	if (!cJSON_IsString(config)) return state;
 	state.config = config ? strdup(config->valuestring) : NULL;
 	state.pid = piditem->valueint;
+	cJSON* mtimeitem = cJSON_GetObjectItem(root, "mtime");
+	if (cJSON_IsNumber(mtimeitem)) {
+		state.mtime = mtimeitem->valuedouble;
+	}
 
 	cJSON_Delete(root);
 	return state;
 }
 
-void write_state(pid_t pid, const char* config) {
+void write_state(pid_t pid, const char* config, time_t mtime) {
 	cJSON* root = cJSON_CreateObject();
 	cJSON_AddNumberToObject(root, "pid", pid);
 	cJSON_AddStringToObject(root, "config", config);
+	cJSON_AddNumberToObject(root, "mtime", (double)mtime);
 
 	char* data = cJSON_Print(root);
 	mode_t old_umask = umask(0);
 	int fd = open(STATE_FILE, O_CREAT | O_WRONLY | O_TRUNC, 0666);
 	umask(old_umask);
-	if(fd >= 0) {
+	if (fd >= 0) {
 		FILE* f = fdopen(fd, "w");
 		if (f) {
 			fputs(data, f);
@@ -87,10 +93,10 @@ void show_logs() {
 			int status;
 			waitpid(pid, &status, 0);
 		} else {
-			perror("❌ Fork failed");
+			perror("⚠️  Fork failed");
 		}
 	} else {
-		printf("❌ There are no logs\n");
+		printf("⚠️  There are no logs\n");
 	}
 }
 
@@ -112,12 +118,13 @@ void kill_previous_process() {
 	bool process_exists = (getpgid(state.pid) >= 0);
 	bool process_killable = (kill(state.pid, 0) == 0);
 	if (process_exists) {
-		if(process_killable) {
-			printf("🔁 Stopping previous process (PID: %d)\n", state.pid);
+		if (process_killable) {
+			printf("Stopping previous process (PID: %d)\n", state.pid);
 			kill(state.pid, SIGTERM);
 		} else { // run from root
 			char self_path[4096];
-			ssize_t len = readlink("/proc/self/exe", self_path, sizeof(self_path) - 1);
+			ssize_t len =
+				readlink("/proc/self/exe", self_path, sizeof(self_path) - 1);
 			assert(len != -1);
 			self_path[len] = '\0';
 			pid_t pid = fork();
@@ -125,7 +132,7 @@ void kill_previous_process() {
 				char* args[] = {"sudo", "-k", self_path, "--stop", NULL};
 				execvp("sudo", args);
 			} else {
-				printf("🔐 Waiting for password...\n");
+				printf("Waiting for password...\n");
 				waitpid(pid, NULL, 0);
 			}
 		}
@@ -133,7 +140,8 @@ void kill_previous_process() {
 		// Process in state file doesn't exist, prompt for logs
 		if (access(LOG_FILE, F_OK) == 0) {
 			char message[256];
-			snprintf(message, sizeof(message), "⚠️ Previous process (PID: %d) not running\n", state.pid);
+			snprintf(message, sizeof(message),
+					 "⚠️ Previous process (PID: %d) not running\n", state.pid);
 			show_logs_prompt(message);
 		} else {
 			printf("⚠️ Previous process (PID: %d) not running\n", state.pid);
@@ -145,69 +153,125 @@ void kill_previous_process() {
 }
 
 void run_singbox_in_fork(const char* config_path) {
-    pid_t pid = fork();
-    if (pid == 0) {
-        setsid();
-        freopen("/dev/null", "r", stdin);
+	struct stat st;
+	time_t mtime = 0;
+	if (stat(config_path, &st) == 0) {
+		mtime = st.st_mtime;
+	}
 
-        // Create log file path
-        char log_path[PATH_MAX];
-        snprintf(log_path, sizeof(log_path), LOG_FILE);
+	pid_t pid = fork();
+	if (pid == 0) {
+		setsid();
+		freopen("/dev/null", "r", stdin);
 
-        // Redirect both stdout and stderr to the same log file
-        FILE* log_file = fopen(log_path, "w");
-        if (log_file) {
-            fclose(log_file);
-            freopen(log_path, "w", stdout);
-            freopen(log_path, "w", stderr);
-        }
+		char log_path[PATH_MAX];
+		snprintf(log_path, sizeof(log_path), LOG_FILE);
 
-        char* args[] = {"sing-box", "run", "-c", (char*)config_path, NULL};
-        execvp("sing-box", args);
-        perror("❌ exec failed");
-        exit(EXIT_FAILURE);
-    } else if (pid > 0) {
-        write_state(pid, config_path);
-        printf("✅ sing-box started with PID: %d\n", pid);
-        exit(EXIT_SUCCESS);
-    } else {
-        perror("❌ Fork failed");
-        exit(EXIT_FAILURE);
-    }
+		FILE* log_file = fopen(log_path, "w");
+		if (log_file) {
+			fclose(log_file);
+			freopen(log_path, "w", stdout);
+			freopen(log_path, "w", stderr);
+		}
+
+		char* args[] = {"sing-box", "run", "-c", (char*)config_path, NULL};
+		execvp("sing-box", args);
+		perror("⚠️  exec failed");
+		exit(EXIT_FAILURE);
+	} else if (pid > 0) {
+		write_state(pid, config_path, mtime);
+		printf("sing-box started with PID: %d\n", pid);
+		exit(EXIT_SUCCESS);
+	} else {
+		perror("⚠️  Fork failed");
+		exit(EXIT_FAILURE);
+	}
 }
 
 void start_singbox(const char* config_path, bool run_as_root) {
 	if (run_as_root) {
-        pid_t pid = fork();
-        if (pid == 0) {
+		pid_t pid = fork();
+		if (pid == 0) {
 			char self_path[4096];
-			ssize_t len = readlink("/proc/self/exe", self_path, sizeof(self_path) - 1);
+			ssize_t len =
+				readlink("/proc/self/exe", self_path, sizeof(self_path) - 1);
 			if (len == -1) {
-				perror("❌ Failed to resolve /proc/self/exe");
+				perror("⚠️ Failed to resolve /proc/self/exe");
 				return;
 			}
 			self_path[len] = '\0';
-            char* args[] = {"sudo", "-k", self_path, "--run-root-internal", (char*)config_path, NULL};
-            execvp("sudo", args);
-            perror("❌ Failed to exec sudo");
-            exit(EXIT_FAILURE);
-        } else if (pid > 0) {
-            printf("🔐 Waiting for password...\n");
-            waitpid(pid, NULL, 0);
-        } else {
-            perror("❌ Fork failed");
-        }
-        return;
-    }
-	
+			char* args[] = {"sudo",
+							"-k",
+							self_path,
+							"--run-root-internal",
+							(char*)config_path,
+							NULL};
+			execvp("sudo", args);
+			perror("⚠️  Failed to exec sudo");
+			exit(EXIT_FAILURE);
+		} else if (pid > 0) {
+			printf("Waiting for password...\n");
+			waitpid(pid, NULL, 0);
+		} else {
+			perror("⚠️  Fork failed");
+		}
+		return;
+	}
+
 	run_singbox_in_fork(config_path);
+}
+
+void restart_singbox() {
+	State state = read_state();
+	if (state.pid == 0 || state.config == NULL) {
+		printf("⚠️  No sing-box to restart\n");
+		free(state.config);
+		return;
+	}
+
+	if (getpgid(state.pid) < 0) {
+		printf("⚠️  sing-box not running\n");
+		free(state.config);
+		return;
+	}
+
+	kill_previous_process();
+
+	size_t count;
+	Config* configs = load_configs(&count);
+	Config* sel_config = NULL;
+	for (size_t i = 0; i < count; i++) {
+		if (strcmp(configs[i].path, state.config) == 0) {
+			sel_config = &configs[i];
+			break;
+		}
+	}
+
+	if (sel_config == NULL) {
+		printf("⚠️  Config file not found: %s\n", state.config);
+		free(state.config);
+		for (size_t i = 0; i < count; i++) {
+			free(configs[i].name);
+			free(configs[i].path);
+		}
+		free(configs);
+		return;
+	}
+
+	start_singbox(sel_config->path, sel_config->run_as_root);
+
+	for (size_t i = 0; i < count; i++) {
+		free(configs[i].name);
+		free(configs[i].path);
+	}
+	free(configs);
 }
 
 int parse_args(int argc, char* argv[]) {
 	if (argc >= 3 && strcmp(argv[1], "--run-root-internal") == 0) {
-        run_singbox_in_fork(argv[2]);
-        exit(0);
-    }
+		run_singbox_in_fork(argv[2]);
+		exit(0);
+	}
 	for (int i = 1; i < argc; i++) {
 		if (argv[i][0] != '-') break;
 
@@ -221,15 +285,18 @@ int parse_args(int argc, char* argv[]) {
 		}
 		if (fullnum) {
 			return atoi(argv[i] + 1);
-		} else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+		} else if (strcmp(argv[i], "--help") == 0 ||
+				   strcmp(argv[i], "-h") == 0) {
 			printf(HELP_TEXT); // Use the help text above
 			exit(0);
-		} else if (strcmp(argv[i], "--stop") == 0 || strcmp(argv[i], "-s") == 0) {
+		} else if (strcmp(argv[i], "--stop") == 0 ||
+				   strcmp(argv[i], "-s") == 0) {
 			kill_previous_process();
 			exit(0);
-		} else if (strcmp(argv[i], "--log") == 0 || strcmp(argv[i], "-l") == 0) {
-            show_logs();
-            exit(0);
+		} else if (strcmp(argv[i], "--log") == 0 ||
+				   strcmp(argv[i], "-l") == 0) {
+			show_logs();
+			exit(0);
 		} else if (strcmp(argv[i], "--status") == 0) {
 			State state = read_state();
 			if (state.pid && getpgid(state.pid) >= 0) {
@@ -263,11 +330,16 @@ int parse_args(int argc, char* argv[]) {
 				}
 			}
 			exit(0);
-		} else if (strcmp(argv[i], "--create") == 0 || strcmp(argv[i], "-c") == 0) {
+		} else if (strcmp(argv[i], "--create") == 0 ||
+				   strcmp(argv[i], "-c") == 0) {
 			tcgetattr(STDIN_FILENO, &orig_termios);
 			printf("\033[s");
 			printf("\033[J"); // clear below
 			launch_urlconfig_tui();
+			exit(0);
+		} else if (strcmp(argv[i], "--restart") == 0 ||
+				   strcmp(argv[i], "-r") == 0) {
+			restart_singbox();
 			exit(0);
 		}
 	}
@@ -281,24 +353,24 @@ int main(int argc, char* argv[]) {
 	size_t config_count;
 	Config* configs = load_configs(&config_count);
 	if (!configs || config_count == 0) {
-		fprintf(stderr, "❌ No configurations found\n");
+		fprintf(stderr, "⚠️  No configurations found\n");
 		return 1;
 	}
 
 	if (selected != -1 && (selected < 1 || selected > (int)config_count)) {
-		fprintf(stderr, "❌ Incorrect selection\n");
+		fprintf(stderr, "⚠️  Incorrect selection\n");
 		rc = 1;
 		goto cleanup;
 	}
 
 	if (selected == -1) {
 		// Show TUI
-		tcgetattr(STDIN_FILENO, &orig_termios);	
+		tcgetattr(STDIN_FILENO, &orig_termios);
 		printf("\033[s");
 		printf("\033[J"); // clear below
 		selected = launch_main_tui(configs, config_count);
 		if (selected < 0) {
-			printf("❌ Selection cancelled\n");
+			printf("⚠️  Selection cancelled\n");
 			rc = 1;
 			goto cleanup;
 		}
@@ -308,11 +380,14 @@ int main(int argc, char* argv[]) {
 
 	Config sel_config = configs[selected];
 
-	// Check if config changed
 	State state = read_state();
-	if (state.config && strcmp(sel_config.path, state.config) == 0) {
-		if (getpgid(state.pid) >= 0) { // check process exists
-			printf("🔁 Configuration unchanged\n");
+	struct stat st;
+	if (state.config && strcmp(sel_config.path, state.config) == 0 &&
+		getpgid(state.pid) >= 0) {
+		if (stat(sel_config.path, &st) == 0 && st.st_mtime != state.mtime) {
+			printf("Configuration file changed\n");
+		} else {
+			printf("Configuration unchanged\n");
 			free(state.config);
 			rc = 1;
 			goto cleanup;
@@ -321,18 +396,15 @@ int main(int argc, char* argv[]) {
 	free(state.config);
 
 	if (access(sel_config.path, F_OK) != 0) {
-		printf("❌Configuration file (%s) does not exist\n",
-			   sel_config.path);
+		printf("⚠️ Configuration file (%s) does not exist\n", sel_config.path);
 		rc = 1;
 		goto cleanup;
 	}
 
-	// Start new process
 	kill_previous_process();
 	start_singbox(sel_config.path, sel_config.run_as_root);
 
 cleanup:
-	// Cleanup
 	for (size_t i = 0; i < config_count; i++) {
 		free(configs[i].name);
 		free(configs[i].path);
